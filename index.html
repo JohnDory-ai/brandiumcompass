@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Antique Navigator</title>
+    <style>
+        :root {
+            --brass: #b5a642;
+            --dark-brass: #8b7d3b;
+            --parchment: #f4e4bc;
+        }
+
+        body {
+            background-color: #2c2c2c;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Georgia', serif;
+            color: var(--parchment);
+            overflow: hidden;
+        }
+
+        .compass-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--parchment) 60%, var(--dark-brass) 100%);
+            border: 12px solid var(--brass);
+            box-shadow: 0 0 50px rgba(0,0,0,0.5), inset 0 0 20px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+
+        .rose {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            color: #4a3728;
+        }
+
+        .direction { position: absolute; font-size: 1.5rem; }
+        .n { top: 10px; }
+        .e { right: 10px; }
+        .s { bottom: 10px; }
+        .w { left: 10px; }
+
+        #needle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 14px;
+            height: 180px;
+            margin-left: -7px;
+            margin-top: -90px;
+            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 10;
+        }
+
+        #needle::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 0;
+            height: 0;
+            border-left: 7px solid transparent;
+            border-right: 7px solid transparent;
+            border-bottom: 90px solid #a30000;
+        }
+
+        #needle::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 0;
+            border-left: 7px solid transparent;
+            border-right: 7px solid transparent;
+            border-top: 90px solid #333;
+        }
+
+        .center-pin {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            background: var(--brass);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 11;
+            border: 1px solid #000;
+        }
+
+        .info {
+            margin-top: 2rem;
+            text-align: center;
+            background: rgba(0,0,0,0.4);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--brass);
+            max-width: 80%;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: var(--brass);
+            border: none;
+            color: black;
+            font-family: inherit;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="compass-container" onclick="requestPermission()">
+        <div class="rose">
+            <span class="direction n">N</span>
+            <span class="direction e">E</span>
+            <span class="direction s">S</span>
+            <span class="direction w">W</span>
+        </div>
+        <div class="center-pin"></div>
+        <div id="needle"></div>
+    </div>
+
+    <div class="info">
+        <p id="status">Tap the compass to start tracking</p>
+        <p style="font-size: 0.8rem; opacity: 0.7;">Target: 40.9827, 29.1321</p>
+    </div>
+
+    <script>
+        const targetLat = 40.98278481279659;
+        const targetLon = 29.13213151484832;
+        const needle = document.getElementById('needle');
+        const statusText = document.getElementById('status');
+
+        function calculateBearing(lat1, lon1, lat2, lon2) {
+            const φ1 = lat1 * Math.PI / 180;
+            const φ2 = lat2 * Math.PI / 180;
+            const Δλ = (lon2 - lon1) * Math.PI / 180;
+            const y = Math.sin(Δλ) * Math.cos(φ2);
+            const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        }
+
+        function startTracking() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition((position) => {
+                    const bearing = calculateBearing(
+                        position.coords.latitude, 
+                        position.coords.longitude, 
+                        targetLat, 
+                        targetLon
+                    );
+                    needle.style.transform = `rotate(${bearing}deg)`;
+                    statusText.innerText = "Target locked. Follow the red needle.";
+                }, (err) => {
+                    statusText.innerText = "GPS Error: " + err.message;
+                }, { enableHighAccuracy: true });
+            }
+        }
+
+        function requestPermission() {
+            // Check for iOS 13+ motion permissions
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(response => {
+                        if (response == 'granted') {
+                            startTracking();
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Android or older iOS
+                startTracking();
+            }
+        }
+    </script>
+</body>
+</html>
