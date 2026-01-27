@@ -22,45 +22,44 @@
             font-family: 'Georgia', serif;
             color: var(--parchment);
             overflow: hidden;
+            touch-action: none;
         }
 
         .compass-container {
             position: relative;
-            width: 300px;
-            height: 300px;
+            width: 280px;
+            height: 280px;
             border-radius: 50%;
             background: radial-gradient(circle, var(--parchment) 60%, var(--dark-brass) 100%);
-            border: 12px solid var(--brass);
-            box-shadow: 0 0 50px rgba(0,0,0,0.5), inset 0 0 20px rgba(0,0,0,0.3);
-            cursor: pointer;
+            border: 10px solid var(--brass);
+            box-shadow: 0 0 40px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.3);
         }
 
+        /* The Rose stays static, the needle moves */
         .rose {
             position: absolute;
             width: 100%;
             height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
             font-weight: bold;
             color: #4a3728;
         }
 
-        .direction { position: absolute; font-size: 1.5rem; }
+        .direction { position: absolute; width: 20px; text-align: center; left: calc(50% - 10px); }
         .n { top: 10px; }
-        .e { right: 10px; }
+        .e { right: 15px; left: auto; top: calc(50% - 12px); }
         .s { bottom: 10px; }
-        .w { left: 10px; }
+        .w { left: 15px; top: calc(50% - 12px); }
 
         #needle {
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 14px;
-            height: 180px;
-            margin-left: -7px;
-            margin-top: -90px;
-            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: 12px;
+            height: 240px;
+            margin-left: -6px;
+            margin-top: -120px;
+            /* Smooth transition for the spin */
+            transition: transform 0.1s linear; 
             z-index: 10;
         }
 
@@ -68,65 +67,59 @@
             content: '';
             position: absolute;
             top: 0;
-            left: 0;
-            width: 0;
-            height: 0;
-            border-left: 7px solid transparent;
-            border-right: 7px solid transparent;
-            border-bottom: 90px solid #a30000;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 120px solid #a30000;
         }
 
         #needle::after {
             content: '';
             position: absolute;
             bottom: 0;
-            left: 0;
-            width: 0;
-            height: 0;
-            border-left: 7px solid transparent;
-            border-right: 7px solid transparent;
-            border-top: 90px solid #333;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 120px solid #333;
         }
 
         .center-pin {
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 10px;
-            height: 10px;
+            width: 12px;
+            height: 12px;
             background: var(--brass);
             border-radius: 50%;
             transform: translate(-50%, -50%);
             z-index: 11;
-            border: 1px solid #000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
 
         .info {
-            margin-top: 2rem;
+            margin-top: 1.5rem;
             text-align: center;
-            background: rgba(0,0,0,0.4);
             padding: 15px;
             border-radius: 8px;
             border: 1px solid var(--brass);
-            max-width: 80%;
+            background: rgba(0,0,0,0.3);
+            width: 80%;
         }
 
-        button {
-            margin-top: 10px;
-            padding: 10px 20px;
+        #btn-start {
+            margin-top: 20px;
+            padding: 15px 30px;
+            font-size: 1.1rem;
             background: var(--brass);
             border: none;
-            color: black;
+            cursor: pointer;
+            border-radius: 50px;
             font-family: inherit;
             font-weight: bold;
-            border-radius: 5px;
-            cursor: pointer;
         }
     </style>
 </head>
 <body>
 
-    <div class="compass-container" onclick="requestPermission()">
+    <div class="compass-container">
         <div class="rose">
             <span class="direction n">N</span>
             <span class="direction e">E</span>
@@ -138,8 +131,8 @@
     </div>
 
     <div class="info">
-        <p id="status">Tap the compass to start tracking</p>
-        <p style="font-size: 0.8rem; opacity: 0.7;">Target: 40.9827, 29.1321</p>
+        <p id="status">Sensors Offline</p>
+        <button id="btn-start">Calibrate Compass</button>
     </div>
 
     <script>
@@ -147,7 +140,12 @@
         const targetLon = 29.13213151484832;
         const needle = document.getElementById('needle');
         const statusText = document.getElementById('status');
+        const btn = document.getElementById('btn-start');
 
+        let userLocation = null;
+        let targetBearing = 0;
+
+        // Calculate angle between two points
         function calculateBearing(lat1, lon1, lat2, lon2) {
             const φ1 = lat1 * Math.PI / 180;
             const φ2 = lat2 * Math.PI / 180;
@@ -157,38 +155,47 @@
             return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
         }
 
-        function startTracking() {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.watchPosition((position) => {
-                    const bearing = calculateBearing(
-                        position.coords.latitude, 
-                        position.coords.longitude, 
-                        targetLat, 
-                        targetLon
-                    );
-                    needle.style.transform = `rotate(${bearing}deg)`;
-                    statusText.innerText = "Target locked. Follow the red needle.";
-                }, (err) => {
-                    statusText.innerText = "GPS Error: " + err.message;
-                }, { enableHighAccuracy: true });
+        function handleOrientation(event) {
+            let heading = event.webkitCompassHeading || (360 - event.alpha);
+            
+            if (userLocation) {
+                // The magic formula: 
+                // Target Bearing (fixed angle to destination) - Your Heading (where you are looking)
+                const finalRotation = targetBearing - heading;
+                needle.style.transform = `rotate(${finalRotation}deg)`;
             }
         }
 
-        function requestPermission() {
-            // Check for iOS 13+ motion permissions
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(response => {
-                        if (response == 'granted') {
-                            startTracking();
-                        }
-                    })
-                    .catch(console.error);
+        async function init() {
+            btn.style.display = 'none';
+            statusText.innerText = "Locating target...";
+
+            // 1. Get GPS Location
+            navigator.geolocation.watchPosition((position) => {
+                userLocation = position.coords;
+                targetBearing = calculateBearing(
+                    userLocation.latitude,
+                    userLocation.longitude,
+                    targetLat,
+                    targetLon
+                );
+                statusText.innerText = "Target Locked: Istanbul";
+            }, (err) => {
+                statusText.innerText = "Check GPS Settings";
+            }, { enableHighAccuracy: true });
+
+            // 2. Request Orientation Permission (iOS 13+)
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                const permission = await DeviceOrientationEvent.requestPermission();
+                if (permission === 'granted') {
+                    window.addEventListener('deviceorientation', handleOrientation, true);
+                }
             } else {
-                // Android or older iOS
-                startTracking();
+                window.addEventListener('deviceorientation', handleOrientation, true);
             }
         }
+
+        btn.addEventListener('click', init);
     </script>
 </body>
 </html>
