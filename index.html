@@ -3,146 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hedef Bulucu Ok</title>
+    <title>Brandium Navigasyon</title>
     <style>
         body {
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            background-color: #1a1a1a;
-            color: white;
-            font-family: sans-serif;
-            overflow: hidden;
+            margin: 0; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; height: 100vh; background: #121212; color: white;
+            font-family: 'Segoe UI', sans-serif; overflow: hidden;
         }
-
-        #status { margin-bottom: 20px; text-align: center; padding: 0 20px; }
-
-        #container {
-            position: relative;
-            width: 200px;
-            height: 200px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
+        #status { font-size: 1.2rem; margin-bottom: 20px; text-align: center; }
         #arrow {
-            width: 0; 
-            height: 0; 
-            border-left: 40px solid transparent;
-            border-right: 40px solid transparent;
-            border-bottom: 80px solid #ff4757;
-            transition: transform 0.1s ease-out;
-            display: block;
+            width: 0; height: 0; 
+            border-left: 35px solid transparent; border-right: 35px solid transparent;
+            border-bottom: 70px solid #00d2ff;
+            filter: drop-shadow(0 0 10px #00d2ff);
+            transition: transform 0.05s linear; /* Yumuşak hareket için */
         }
-
-        #success {
-            font-size: 100px;
-            color: #2ed573;
-            display: none;
+        #success { font-size: 80px; display: none; color: #4cd137; }
+        button {
+            padding: 15px 30px; font-size: 18px; border-radius: 50px;
+            border: none; background: #00d2ff; color: black; font-weight: bold;
+            cursor: pointer; box-shadow: 0 4px 15px rgba(0,210,255,0.4);
         }
-
-        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <div id="status">Konum izni bekleniyor...</div>
-
-    <div id="container">
-        <div id="arrow"></div>
-        <div id="success">✔</div>
+    <div id="ui">
+        <button id="startBtn">Sistemi Başlat</button>
     </div>
 
+    <div id="status" style="display:none">Konum aranıyor...</div>
+    <div id="arrow" style="display:none"></div>
+    <div id="success">✔ Hedefe Vardınız</div>
+
     <script>
-        // HEDEF KOORDİNATLAR (Burayı gitmek istediğin yerle değiştir)
-        const target = {
-            lat: 40.982377, // Örn: İstanbul
-            lon: 29.130676
-        };
-        const threshold = 10; // Kaç metre kala tik işareti çıksın? (10 metre)
+        // BRANDIUM AVM GÜNCEL KOORDİNAT (Ana Giriş Yakınları)
+        const target = { lat: 40.982428, lon: 29.130761 }; 
+        const threshold = 12; // Metre
 
         let userCoords = null;
-        let compassHeading = 0;
+        let lastBearing = 0;
+        let lastCompass = 0;
+        let filteredRotation = 0;
 
+        const startBtn = document.getElementById('startBtn');
+        const status = document.getElementById('status');
         const arrow = document.getElementById('arrow');
         const success = document.getElementById('success');
-        const status = document.getElementById('status');
 
-        // 1. Konum Takibi
-        if (navigator.geolocation) {
-            navigator.geolocation.watchPosition(position => {
-                userCoords = {
-                    lat: position.coords.latitude,
-                    lon: position.coords.longitude
-                };
+        startBtn.onclick = () => {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(state => {
+                    if (state === 'granted') init();
+                });
+            } else {
+                init();
+            }
+            startBtn.parentElement.style.display = 'none';
+            status.style.display = 'block';
+            arrow.style.display = 'block';
+        };
+
+        function init() {
+            // Konum Takibi
+            navigator.geolocation.watchPosition(pos => {
+                userCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+                const dist = calculateDistance(userCoords.lat, userCoords.lon, target.lat, target.lon);
                 
-                const distance = calculateDistance(userCoords.lat, userCoords.lon, target.lat, target.lon);
-                status.innerHTML = `Hedefe uzaklık: <b>${Math.round(distance)} metre</b>`;
-
-                if (distance <= threshold) {
-                    arrow.classList.add('hidden');
+                status.innerHTML = `Uzaklık: <b>${Math.round(dist)}m</b>`;
+                
+                if (dist < threshold) {
+                    arrow.style.display = 'none';
                     success.style.display = 'block';
                 } else {
-                    arrow.classList.remove('hidden');
+                    arrow.style.display = 'block';
                     success.style.display = 'none';
-                    updateRotation();
                 }
-            }, err => {
-                status.innerText = "Konum alınamadı: " + err.message;
-            }, { enableHighAccuracy: true });
+            }, null, { enableHighAccuracy: true });
+
+            // Pusula Takibi
+            const handleRotate = (e) => {
+                let heading = e.webkitCompassHeading || (360 - e.alpha);
+                if (!heading) return;
+
+                // TİTREME ÖNLEYİCİ FİLTRE (Low-Pass Filter)
+                // Yeni değerin sadece %15'ini alarak ani sıçramaları engeller
+                lastCompass = lastCompass + 0.15 * (heading - lastCompass);
+                
+                if (userCoords) {
+                    const targetBearing = calculateBearing(userCoords.lat, userCoords.lon, target.lat, target.lon);
+                    const finalRotation = targetBearing - lastCompass;
+                    arrow.style.transform = `rotate(${finalRotation}deg)`;
+                }
+            };
+
+            window.addEventListener('deviceorientation', handleRotate, true);
         }
 
-        // 2. Pusula Takibi (iOS için izin gerekebilir)
-        window.addEventListener('deviceorientationabsolute', handleOrientation);
-        window.addEventListener('deviceorientation', handleOrientation);
-
-        function handleOrientation(event) {
-            // alpha: cihazın z ekseni etrafındaki dönüşü (0-360)
-            compassHeading = event.webkitCompassHeading || (360 - event.alpha);
-            updateRotation();
-        }
-
-        function updateRotation() {
-            if (!userCoords || !compassHeading) return;
-
-            const bearing = calculateBearing(userCoords.lat, userCoords.lon, target.lat, target.lon);
-            // Okun dönüş açısı = (Hedefin açısı) - (Telefonun baktığı yön)
-            const arrowRotation = bearing - compassHeading;
-            arrow.style.transform = `rotate(${arrowRotation}deg)`;
-        }
-
-        // Matematiksel Fonksiyonlar
         function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; // Dünya yarıçapı (metre)
-            const φ1 = lat1 * Math.PI/180;
-            const φ2 = lat2 * Math.PI/180;
-            const Δφ = (lat2-lat1) * Math.PI/180;
-            const Δλ = (lon2-lon1) * Math.PI/180;
-
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                      Math.cos(φ1) * Math.cos(φ2) *
-                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+            const R = 6371e3;
+            const p1 = lat1 * Math.PI/180;
+            const p2 = lat2 * Math.PI/180;
+            const dp = (lat2-lat1) * Math.PI/180;
+            const dl = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
         function calculateBearing(lat1, lon1, lat2, lon2) {
-            const φ1 = lat1 * Math.PI/180;
-            const φ2 = lat2 * Math.PI/180;
-            const λ1 = lon1 * Math.PI/180;
-            const λ2 = lon2 * Math.PI/180;
-
-            const y = Math.sin(λ2-λ1) * Math.cos(φ2);
-            const x = Math.cos(φ1) * Math.sin(φ2) -
-                      Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2-λ1);
-            let bearing = Math.atan2(y, x) * 180 / Math.PI;
-            return (bearing + 360) % 360;
+            const l1 = lon1 * Math.PI/180;
+            const l2 = lon2 * Math.PI/180;
+            const p1 = lat1 * Math.PI/180;
+            const p2 = lat2 * Math.PI/180;
+            const y = Math.sin(l2-l1) * Math.cos(p2);
+            const x = Math.cos(p1)*Math.sin(p2) - Math.sin(p1)*Math.cos(p2)*Math.cos(l2-l1);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
         }
     </script>
 </body>
 </html>
-
